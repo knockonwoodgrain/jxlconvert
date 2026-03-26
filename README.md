@@ -5,8 +5,8 @@ You will need to install all three programs and have them on your path for jxlco
 
 You can install them here:
 
-1. [libvips: an image processing library](https://github.com/libvips/libvips) \
-2. [libjxl: JPEG XL reference implementation](https://github.com/libjxl/libjxl)\
+1. [libvips: an image processing library](https://github.com/libvips/libvips) 
+2. [libjxl: JPEG XL reference implementation](https://github.com/libjxl/libjxl)
 3. [ExifTool by Phil Harvey](https://exiftool.org/)
 
 > [!NOTE]
