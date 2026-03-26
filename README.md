@@ -39,6 +39,6 @@ Options:
 
 
 # Why should I use JPEG XL 
-Because JPEG XL is fucking awesome, read more on [JPEGXL.INFO](https://jpegxl.info/)
-Battle of the Codecs [Comparision Chart](https://jpegxl.info/resources/battle-of-codecs.html)
+Because JPEG XL is fucking awesome, read more on [JPEGXL.INFO](https://jpegxl.info/)\
+Battle of the Codecs [Comparision Chart](https://jpegxl.info/resources/battle-of-codecs.html)\
 Can I use it? (You can't use it yet, but it's the next JPEG, and even Chrome has turned around and started implementation) [JPEG XL](https://caniuse.com/jpegxl)
