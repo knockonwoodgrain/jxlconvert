@@ -1,7 +1,7 @@
 use clap::{Parser, ValueHint, value_parser};
 use threadpool::ThreadPool;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use std::{ process::Stdio, sync::mpsc::channel, u64};
+use std::{ path::Path, process::Stdio, sync::mpsc::channel, u64};
 
 #[derive(Parser)]
 #[command(version="0.8", about="JXLCONVERT Batch convert image files to JXL")]
@@ -11,7 +11,7 @@ struct Cli {
     path: std::path::PathBuf,
     #[arg(value_hint=ValueHint::DirPath, default_value="./JXL")]
     output_path: std::path::PathBuf,
-    #[arg(long, short, default_value = "cjxl", value_names = ["cjxl", "vips"])]
+    #[arg(long, short, default_value = "cjxl")]
     encoder: String,
     // The quality
     #[arg(long, short, default_value_t = 85, value_parser = value_parser!(u32).range(1..100), value_name = "0..100")]
@@ -24,10 +24,9 @@ fn main() {
     let pool = ThreadPool::new(15);
     let args = Cli::parse();
     let _ = std::fs::create_dir(&args.output_path);
-    let count = std::fs::read_dir(&args.path).unwrap_or_else(|error|{
+    let _count = std::fs::read_dir(&args.path).unwrap_or_else(|error|{
         panic!("Problem reading the file {error:?}")
     }).count();
-    println!("{}", count);
     let mut count_file: u64 = 0;
     let mut current_dir_file_only: Vec<std::fs::DirEntry> = Vec::new();
     let mut list_file: Vec<_> = std::fs::read_dir(&args.path).unwrap_or_else(|error|{panic!("Problem readint the file {error:?}")})
@@ -37,15 +36,19 @@ fn main() {
     for n in list_file {
         let direntry = n;
         if &direntry.file_type().unwrap_or_else(|error|{panic!("Couldn't extract file type from {direntry:?} {error:?}")}).is_file() == &true {
+            // if direntry.path().file_name().filter() {
+            //     println!("file {:?} starts with a dot (.), ignoring", direntry.file_name());
+            //     continue;
+            // }
             let extension = &direntry.path().extension()
-                .expect("Couldn't get the extension {direntry:?}").display().to_string().to_lowercase();
+                .unwrap_or_else(||{panic!("Couldn't get the extension {direntry:?}")}).display().to_string().to_lowercase();
             if file_types.iter().any(|x| extension.contains(x)){
             current_dir_file_only.push(direntry);
             count_file += 1;
             }
         };     
     };
-    println!("All files only {}, current_dir_file_only count: {}", &count_file, current_dir_file_only.iter().count());
+    println!("All entries {}, All Image Files: {}", &_count, current_dir_file_only.iter().count());
     if count_file == 0 {return;};
     if current_dir_file_only.iter().count() == 0 {return;};
     let multibar = MultiProgress::new();
@@ -69,11 +72,11 @@ fn main() {
             let file = entry;
             let image_file_display: &str = &file.path().display().to_string();
             let output_file = &file.path().with_extension("JXL");
-            let output_file_only = &output_file.file_name().expect("Expected file name from {output_file_only:?}");
+            let output_file_only = &output_file.file_name().unwrap_or_else(||{panic!("Expected file name from {output_file:?}")});
             let mut final_file = std::path::PathBuf::new();
             final_file.push(&output_dir);
             final_file.push(&output_file_only);
-            let final_file = final_file.to_str().expect("Couldn't convert {final_file:?} to str");
+            let final_file = final_file.to_str().unwrap_or_else(||{panic!("Couldn't convert {final_file:?} to str")});
             // println!("Converting: {} -> {}",&image_file.file_name().expect("file not found").display(), &output_file_only.display());
             let cjxl_file_types = ["jpg", "jpeg", "png", "gif"];
             let extension = &file.path().extension().expect("Couldn't Get Extension").display().to_string().to_lowercase();
@@ -85,34 +88,64 @@ fn main() {
             let already_exists = std::fs::exists(&final_file).unwrap_or_else(|e|{panic!("Couldn't check if file exists {e:?}")});
             if !already_exists {
                 if encoder == "cjxl" {
-                    let message = format!("Converting: {} -> {}",&file.path().file_name()
-                        .expect("File {file:?} not found").display(), &output_file_only.display());
-                    let message_error = format!("ERROR sending convert message: {} -> {}",&file.path().file_name()
-                        .expect("File {file:?} not found").display(), &output_file_only.display());
-                    tx_message.send(message.clone()).expect(&message_error);
                     // thread::sleep(time::Duration::from_millis(200));
                     let _convert = std::process::Command::new("cjxl")
                         .args([&image_file_display, &final_file,"--effort=7", "-q", &quality_str, "--lossless_jpeg=0", "--quiet"])
                         .stdout(Stdio::null())
+                        .stderr(Stdio::null())
                         .status()
                         .unwrap_or_else(|e|{panic!("Couldn't spawn cjxl for {image_file_display:?} {e:?}")});
                     // println!("Convert CJXL message for {image_file_display:?} {_convert:?}");
-                
-                    let convert_message = format!("Copying Metadata for {}", &output_file_only.display());
-                    let convert_message_error = format!("ERROR sending exif message {}", &output_file_only.display());
-                    tx_message.send(convert_message).expect(&convert_message_error);
-                    // thread::sleep(time::Duration::from_millis(200));
-                    let _exiftool = std::process::Command::new("exiftool")
-                        .args(["-m", "-TagsFromFile", &image_file_display, "-all", "-FileModifyDate<FileModifyDate", &final_file, "-overwrite_original"])
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .status()
-                        .unwrap_or_else(|e|{panic!("Couldn't read status on Exiftool for file {image_file_display:?} {e:?}")});
-                    // println!("Convert EXIF message {_exiftool:?}");
 
-                } else if encoder == "vips" {
+                    let final_path = Path::new(&final_file);
+                    let converted_file = match std::fs::exists(&final_path) {
+                        Ok(true) => true,
+                        Ok(false) => false,
+                        Err(e) => panic!("fuck {}", e),
+                    };
+
+                    
+                    if !converted_file {
+                        encoder = String::from("vips");
+                        eprintln!("Couldn't find output file, using VIPS to convert {:?}", &image_file_display);
+                        // return;
+                    } else if converted_file {
+                        // return;
+                        // eprintln!("Could find output file{:?}", &image_file_display)
+                        let message = format!("Converting: {} -> {}",&file.path().file_name()
+                            .unwrap_or_else(||{panic!("File {file:?} not found")}).display(), &output_file_only.display());
+                        let message_error = format!("ERROR sending convert message: {} -> {}",&file.path().file_name()
+                            .unwrap_or_else(||{panic!("File {file:?} not found")}).display(), &output_file_only.display());
+                        tx_message.send(message.clone()).expect(&message_error);
+
+                        // thread::sleep(time::Duration::from_millis(200));
+                        let _exiftool = std::process::Command::new("exiftool")
+                            .args(["-m", "-TagsFromFile", &image_file_display, "-all", "-FileModifyDate<FileModifyDate", &final_file, "-overwrite_original"])
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .status()
+                            .unwrap_or_else(|e|{panic!("Couldn't read status on Exiftool for file {image_file_display:?} {e:?}")});
+                        // println!("Convert EXIF message {_exiftool:?}");
+                        let convert_message = format!("Copying Metadata for {}", &output_file_only.display());
+                        let convert_message_error = format!("ERROR sending exif message {}", &output_file_only.display());
+                        tx_message.send(convert_message).expect(&convert_message_error);
+                    };
+                }
+
+                let final_path = Path::new(&final_file);
+                let converted_file = std::fs::exists(&final_path); 
+                
+                if converted_file.is_err() {
+                    encoder = String::from("vips");
+                    eprintln!("Couldn't find output file, using VIPS to convert {:?}", &image_file_display)
+                } else if converted_file.is_ok() {
+                    // return;
+                    // eprintln!("Could find output file{:?}", &image_file_display)
+                };
+
+                if encoder == "vips" {
                     let message = format!("Converting: {} -> {}",&file.path().file_name()
-                        .expect("File {file:?} not found").display(), &output_file_only.display());
+                        .expect("File not found").display(), &output_file_only.display());
                     let message_error = format!("ERROR sending convert message: {} -> {}",&file.path().file_name()
                         .expect("File {file:?} not found").display(), &output_file_only.display());
                     tx_message.send(message.clone()).expect(&message_error);
@@ -135,8 +168,10 @@ fn main() {
                         .unwrap_or_else(|e|{panic!("Couldn't read status on Exiftool for file {image_file_display:?} {e:?}")});
                     // println!("Convert EXIF message {_exiftool:?}");
 
-                } else {
-                    panic!("Wrong convert type for, please use vips or cjxl as the encoder");
+                } 
+
+                if encoder != "vips" && encoder != "cjxl" {
+                    panic!("Wrong convert type for {:?}, please use vips or cjxl as the encoder, encoder = {}", &image_file_display, &encoder);
                 };
                 if file_count == count_file {
                     let done  = String::from("done");
@@ -145,7 +180,7 @@ fn main() {
                 };
                 return;
             } else {
-                eprintln!("File {:?} already exists", &output_file_only);
+                // eprintln!("File {:?} already exists, skipping", &output_file_only);
                 let _ = tx_message.send(String::from("File already exists"));
                 return;
             };
@@ -168,6 +203,9 @@ fn main() {
             break;
         };
         if recv.starts_with("Converting") {
+            if recv.contains("VIPS") {
+                // eprintln!("{:?}", &recv);
+            }
             bar.set_message(recv);
             bar.inc(1);
             continue;
@@ -175,7 +213,14 @@ fn main() {
             bar2.set_message(recv);
             bar2.inc(1);
             continue;
-        };
+        } else if recv.starts_with("File") {
+            bar.set_message(recv.clone());
+            bar.inc(1);
+            bar2.set_message(recv);
+            bar2.inc(1);
+            continue;
+        }
+        ;
     };
     pool.join();
 }
